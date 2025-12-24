@@ -8,16 +8,13 @@ import pandas as pd
 import plotly.graph_objs as go
 import requests
 from textblob import TextBlob
-import openai
+from openai import OpenAI
 from datetime import datetime, timedelta
 import os
 # Get keys from environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
-
-# Assign OpenAI key
-openai.api_key = OPENAI_API_KEY
-
+client = OpenAI(api_key=OPENAI_API_KEY)
 # ----------------------------
 # Helper Functions
 # ----------------------------
@@ -82,23 +79,32 @@ def fetch_news(symbol, page_size=5):
     except Exception as e:
         st.error(f"Error fetching news: {e}")
         return []
-
 def ai_answer(question):
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role":"user","content":question}],
-            max_tokens=300
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional financial analyst. "
+                        "Do NOT predict exact stock prices. "
+                        "Provide trends, risks, sentiment, and educational insights only."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
+            max_tokens=300,
+            temperature=0.4
         )
-        answer = response['choices'][0]['message']['content']
-        return answer
+        return response.choices[0].message.content
     except Exception as e:
-        st.error(f"Error with AI Q&A: {e}")
-        return "Could not get answer."
-
+        return f"AI Error: {e}"
 def download_csv(df):
     return df.to_csv(index=False).encode('utf-8')
-
 # ----------------------------
 # Streamlit App
 # ----------------------------
