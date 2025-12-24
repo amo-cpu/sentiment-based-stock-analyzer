@@ -10,7 +10,7 @@ import requests
 from textblob import TextBlob
 import openai
 from datetime import datetime, timedelta
-
+import os
 # Get keys from environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
