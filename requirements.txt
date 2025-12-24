@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+plotly
+yfinance
+requests
+textblob
+transformers
+torch
+openai
