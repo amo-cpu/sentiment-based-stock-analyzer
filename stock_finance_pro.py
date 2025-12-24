@@ -11,12 +11,11 @@ from textblob import TextBlob
 import openai
 from datetime import datetime, timedelta
 
-# ----------------------------
-# User API Keys (replace with your actual keys)
-# ----------------------------
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # Replace with your OpenAI API key
-NEWSAPI_KEY = "YOUR_NEWSAPI_KEY"        # Replace with your NewsAPI key
+# Get keys from environment variables
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
 
+# Assign OpenAI key
 openai.api_key = OPENAI_API_KEY
 
 # ----------------------------
