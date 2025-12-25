@@ -14,7 +14,7 @@ import os
 # Get keys from environment variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 # ----------------------------
 # Helper Functions
 # ----------------------------
@@ -111,9 +111,13 @@ from openai import OpenAI
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 def ai_answer(question, symbol):
+    # 🚫 No OpenAI key → skip AI entirely
+    if client is None:
+        return finance_fallback_answer(question, symbol)
+
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -129,8 +133,10 @@ def ai_answer(question, symbol):
             temperature=0.4
         )
         return response.choices[0].message.content
+
     except Exception:
         return finance_fallback_answer(question, symbol)
+
 def download_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 # ----------------------------
@@ -189,8 +195,8 @@ st.subheader("Ask AI about the Stock")
 question = st.text_area("Enter your question here:")
 if st.button("Get Answer"):
     if question.strip() != "":
-answer = ai_answer(question, stock_symbol)
-st.markdown(f"**Answer:** {answer}")
+        answer = ai_answer(question, stock_symbol)
+        st.markdown(f"**Answer:** {answer}")
     else:
         st.warning("Please enter a question.")
 
