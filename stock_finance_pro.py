@@ -18,7 +18,35 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # ----------------------------
 # Helper Functions
 # ----------------------------
-
+def finance_fallback_answer(question, symbol):
+    try:
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        q = question.lower()
+        if "price" in q or "current" in q:
+            return f"The current price of {symbol} is ${info.get('currentPrice', 'N/A')}."
+        if "market cap" in q:
+            return f"{symbol} has a market capitalization of ${info.get('marketCap', 'N/A')}."
+        if "pe" in q or "p/e" in q:
+            return f"{symbol} has a P/E ratio of {info.get('trailingPE', 'N/A')}."
+        if "what does" in q or "company" in q:
+            return info.get("longBusinessSummary", "No company description available.")
+        if "risk" in q:
+            return (
+                "Key risks include market volatility, earnings uncertainty, "
+                "macroeconomic conditions, and sector-specific risks."
+            )
+        if "outlook" in q or "future" in q:
+            return (
+                "Outlook depends on earnings growth, macroeconomic conditions, "
+                "interest rates, and overall market sentiment."
+            )
+        return (
+            "This question requires deeper qualitative analysis. "
+            "The AI assistant could not be reached, so real-time data was used instead."
+        )
+    except Exception:
+        return "Unable to retrieve fallback financial data."
 @st.cache_data(ttl=300)
 def get_stock_data(symbol, period="6mo", interval="1d"):
     try:
@@ -79,7 +107,10 @@ def fetch_news(symbol, page_size=5):
     except Exception as e:
         st.error(f"Error fetching news: {e}")
         return []
-def ai_answer(question):
+from openai import OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def ai_answer(question, symbol):
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -88,21 +119,18 @@ def ai_answer(question):
                     "role": "system",
                     "content": (
                         "You are a professional financial analyst. "
-                        "Do NOT predict exact stock prices. "
-                        "Provide trends, risks, sentiment, and educational insights only."
+                        "Do not predict exact prices. "
+                        "Provide educational and analytical answers."
                     )
                 },
-                {
-                    "role": "user",
-                    "content": question
-                }
+                {"role": "user", "content": question}
             ],
             max_tokens=300,
             temperature=0.4
         )
         return response.choices[0].message.content
-    except Exception as e:
-        return f"AI Error: {e}"
+    except Exception:
+        return finance_fallback_answer(question, symbol)
 def download_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 # ----------------------------
@@ -161,8 +189,8 @@ st.subheader("Ask AI about the Stock")
 question = st.text_area("Enter your question here:")
 if st.button("Get Answer"):
     if question.strip() != "":
-        answer = ai_answer(question)
-        st.markdown(f"**Answer:** {answer}")
+answer = ai_answer(question, stock_symbol)
+st.markdown(f"**Answer:** {answer}")
     else:
         st.warning("Please enter a question.")
 
