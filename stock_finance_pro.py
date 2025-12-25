@@ -1,7 +1,7 @@
 # stock_finance_pro.py
 # Full professional stock dashboard for Streamlit
 # Features: Real-time stock data, SMA/EMA, candlestick & line charts, AI Q&A, news + sentiment, multi-stock comparison, CSV export
-
+import re
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -22,31 +22,52 @@ def finance_fallback_answer(question, symbol):
     try:
         stock = yf.Ticker(symbol)
         info = stock.info
+        price = info.get("currentPrice")
+
         q = question.lower()
+
+        # ----- Shares calculation -----
+        match = re.search(r'(\d+)\s+shares?', q)
+        if match and price:
+            shares = int(match.group(1))
+            value = shares * price
+            return (
+                f"{shares} shares of {symbol} are worth approximately "
+                f"${value:,.2f} right now "
+                f"(based on a current price of ${price:.2f})."
+            )
+
+        # ----- Current price -----
         if "price" in q or "current" in q:
-            return f"The current price of {symbol} is ${info.get('currentPrice', 'N/A')}."
+            return f"The current price of {symbol} is approximately ${price:.2f}."
+
+        # ----- Market cap -----
         if "market cap" in q:
-            return f"{symbol} has a market capitalization of ${info.get('marketCap', 'N/A')}."
+            return f"{symbol}'s market capitalization is approximately ${info.get('marketCap', 'N/A')}."
+
+        # ----- P/E ratio -----
         if "pe" in q or "p/e" in q:
-            return f"{symbol} has a P/E ratio of {info.get('trailingPE', 'N/A')}."
-        if "what does" in q or "company" in q:
-            return info.get("longBusinessSummary", "No company description available.")
+            return f"{symbol}'s P/E ratio is approximately {info.get('trailingPE', 'N/A')}."
+
+        # ----- Risk -----
         if "risk" in q:
             return (
                 "Key risks include market volatility, earnings uncertainty, "
-                "macroeconomic conditions, and sector-specific risks."
+                "macroeconomic conditions, interest rates, and sector competition."
             )
-        if "outlook" in q or "future" in q:
-            return (
-                "Outlook depends on earnings growth, macroeconomic conditions, "
-                "interest rates, and overall market sentiment."
-            )
+
+        # ----- Company description -----
+        if "what does" in q or "company" in q:
+            return info.get("longBusinessSummary", "No company description available.")
+
         return (
-            "This question requires deeper qualitative analysis. "
-            "The AI assistant could not be reached, so real-time data was used instead."
+            "I couldn’t reach the AI model, but real-time financial data was used. "
+            "Try asking about price, shares, risk, or company fundamentals."
         )
+
     except Exception:
-        return "Unable to retrieve fallback financial data."
+        return "Unable to retrieve real-time financial data at the moment."
+
 @st.cache_data(ttl=300)
 def get_stock_data(symbol, period="6mo", interval="1d"):
     try:
