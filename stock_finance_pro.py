@@ -128,8 +128,7 @@ def fetch_news(symbol, page_size=5):
     except Exception as e:
         st.error(f"Error fetching news: {e}")
         return []
-from openai import OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
 def ai_answer(question, symbol):
     # 🚫 No OpenAI key → skip AI entirely
