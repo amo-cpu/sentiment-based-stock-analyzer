@@ -1,43 +1,46 @@
 Professional Stock Finance Dashboard
 
-This project is an interactive stock market analysis dashboard built with Python and Streamlit. It integrates real-time and historical market data, technical indicators, news sentiment analysis, and an AI-powered question-answering system with a deterministic fallback to ensure reliability.
+Live Demo:
+https://sentiment-based-stock-analyzer-p6kc8qzqfukysyffrfwv4u.streamlit.app/
 
-The dashboard is designed for educational and analytical use, demonstrating how artificial intelligence and data science can be applied responsibly in finance.
+This project is an interactive stock market analysis dashboard built with Python and Streamlit. It integrates real-time and historical market data, technical indicators, news sentiment analysis, and an AI-assisted question-answering system with deterministic fallback logic to ensure reliability.
+
+The dashboard is designed for educational and analytical use, demonstrating responsible applications of artificial intelligence in finance.
 
 Features
 Stock Market Analysis
 
-Real-time and historical stock data using Yahoo Finance
+Real-time and historical stock data via Yahoo Finance
 
-Configurable time periods and intervals
+Configurable time periods and data intervals
 
-Candlestick and line charts
+Candlestick and line chart visualizations
 
 Simple Moving Average (SMA)
 
 Exponential Moving Average (EMA)
 
-News & Sentiment Analysis
+News and Sentiment Analysis
 
-Live financial news using NewsAPI
+Live financial news retrieval using NewsAPI
 
-Sentiment scoring using TextBlob
+Sentiment polarity scoring using TextBlob
 
-Article-level sentiment visualization and summaries
+Article-level sentiment display
 
-AI-Powered Stock Q&A
+AI-Assisted Stock Q&A
 
-Natural language questions about stocks
+Natural-language questions about stocks
 
-Answers questions such as:
+Supports:
 
 Share value calculations
 
-Current price
+Current price queries
 
-Company overview
+Company overviews
 
-Market risk
+Market risk explanations
 
 Basic fundamentals
 
@@ -61,8 +64,6 @@ Streamlit
 
 pandas
 
-numpy
-
 yfinance
 
 Plotly
@@ -79,37 +80,37 @@ requirements.txt
 README.md
 
 Installation and Setup
-1. Clone the Repository
+Clone the Repository
 git clone https://github.com/yourusername/stock-finance-dashboard.git
 cd stock-finance-dashboard
 
-2. Install Dependencies
+Install Dependencies
 pip install -r requirements.txt
 
-3. Set Environment Variables
+Set Environment Variables
 
-Set the following environment variables:
+The following environment variables are required:
 
 OPENAI_API_KEY=your_openai_api_key
 NEWSAPI_KEY=your_newsapi_key
 
 
-For Streamlit Cloud, add these under Secrets.
+For Streamlit Cloud deployment, add these values under Secrets.
 
 Running the Application
 streamlit run stock_finance_pro.py
 
 AI Safety and Reliability
 
-The AI assistant is configured to:
+The AI assistant is explicitly configured to:
 
 Avoid price prediction
 
 Provide educational and analytical responses only
 
-Fall back to deterministic finance calculations when AI is unavailable
+Fall back to deterministic financial calculations when AI services fail
 
-This ensures that the application remains reliable and transparent.
+This ensures transparency, reliability, and responsible AI usage.
 
 Disclaimer
 
@@ -117,4 +118,4 @@ This project is for educational purposes only and does not constitute financial 
 
 Author
 
-Developed by a high school student with interests in artificial intelligence, finance, and applied data science.pro
+Developed by a high school student with interests in artificial intelligence, finance, and applied data science.
