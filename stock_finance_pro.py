@@ -1,22 +1,29 @@
 # stock_finance_pro.py
-# Full professional stock dashboard for Streamlit
-# Features: Real-time stock data, SMA/EMA, candlestick & line charts, AI Q&A, news + sentiment, multi-stock comparison, CSV export
+
+import os
 import re
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objs as go
 import requests
+
 from textblob import TextBlob
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from openai import OpenAI
 from datetime import datetime, timedelta
-import os
-# Get keys from environment variables
+
+# ----------------------------
+# API Keys (from environment)
+# ----------------------------
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
+
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+vader = SentimentIntensityAnalyzer()
+
 # ----------------------------
-# Helper Functions
+# Fallback Financial Logic
 # ----------------------------
 def finance_fallback_answer(question, symbol):
     try:
@@ -26,113 +33,115 @@ def finance_fallback_answer(question, symbol):
 
         q = question.lower()
 
-        # ----- Shares calculation -----
         match = re.search(r'(\d+)\s+shares?', q)
         if match and price:
             shares = int(match.group(1))
-            value = shares * price
-            return (
-                f"{shares} shares of {symbol} are worth approximately "
-                f"${value:,.2f} right now "
-                f"(based on a current price of ${price:.2f})."
-            )
+            return f"{shares} shares of {symbol} are worth approximately ${shares * price:,.2f}."
 
-        # ----- Current price -----
         if "price" in q or "current" in q:
             return f"The current price of {symbol} is approximately ${price:.2f}."
 
-        # ----- Market cap -----
         if "market cap" in q:
-            return f"{symbol}'s market capitalization is approximately ${info.get('marketCap', 'N/A')}."
+            return f"{symbol}'s market cap is approximately ${info.get('marketCap', 'N/A')}."
 
-        # ----- P/E ratio -----
         if "pe" in q or "p/e" in q:
             return f"{symbol}'s P/E ratio is approximately {info.get('trailingPE', 'N/A')}."
 
-        # ----- Risk -----
         if "risk" in q:
             return (
-                "Key risks include market volatility, earnings uncertainty, "
-                "macroeconomic conditions, interest rates, and sector competition."
+                "Risks include earnings volatility, market conditions, "
+                "interest rate changes, and competitive pressure."
             )
 
-        # ----- Company description -----
-        if "what does" in q or "company" in q:
-            return info.get("longBusinessSummary", "No company description available.")
+        if "company" in q or "what does" in q:
+            return info.get("longBusinessSummary", "Company description unavailable.")
 
         return (
-            "I couldn’t reach the AI model, but real-time financial data was used. "
-            "Try asking about price, shares, risk, or company fundamentals."
+            "AI was unavailable, so real-time financial data was used instead. "
+            "Try asking about price, shares, fundamentals, or risk."
         )
 
     except Exception:
-        return "Unable to retrieve real-time financial data at the moment."
+        return "Unable to retrieve financial data at the moment."
 
+# ----------------------------
+# Stock Data
+# ----------------------------
 @st.cache_data(ttl=300)
-def get_stock_data(symbol, period="6mo", interval="1d"):
-    try:
-        stock = yf.Ticker(symbol)
-        df = stock.history(period=period, interval=interval)
-        df = df.reset_index()
-        df.columns = [col.lower() for col in df.columns]
-        if "close" not in df.columns:
-            raise KeyError("No recognized close price column found in the DataFrame.")
-        return df
-    except Exception as e:
-        st.error(f"Error fetching stock data: {e}")
-        return pd.DataFrame()
-
-def calculate_sma(df, period=20):
-    df[f"SMA{period}"] = df["close"].rolling(window=period).mean()
+def get_stock_data(symbol, period, interval):
+    stock = yf.Ticker(symbol)
+    df = stock.history(period=period, interval=interval)
+    df = df.reset_index()
+    df.columns = [c.lower() for c in df.columns]
     return df
 
-def calculate_ema(df, period=20):
+def calculate_sma(df, period):
+    df[f"SMA{period}"] = df["close"].rolling(period).mean()
+    return df
+
+def calculate_ema(df, period):
     df[f"EMA{period}"] = df["close"].ewm(span=period, adjust=False).mean()
     return df
 
+# ----------------------------
+# Charts
+# ----------------------------
 def plot_candlestick(df, symbol):
-    fig = go.Figure(data=[go.Candlestick(x=df['date'],
-                                         open=df['open'],
-                                         high=df['high'],
-                                         low=df['low'],
-                                         close=df['close'],
-                                         name=symbol)])
-    fig.update_layout(title=f"{symbol} Candlestick Chart", xaxis_title="Date", yaxis_title="Price")
+    fig = go.Figure(go.Candlestick(
+        x=df["date"],
+        open=df["open"],
+        high=df["high"],
+        low=df["low"],
+        close=df["close"]
+    ))
+    fig.update_layout(title=f"{symbol} Candlestick Chart")
     st.plotly_chart(fig, use_container_width=True)
 
 def plot_line(df, symbol):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['date'], y=df['close'], mode='lines', name='Close'))
-    if f"SMA20" in df.columns:
-        fig.add_trace(go.Scatter(x=df['date'], y=df['SMA20'], mode='lines', name='SMA20'))
-    if f"EMA20" in df.columns:
-        fig.add_trace(go.Scatter(x=df['date'], y=df['EMA20'], mode='lines', name='EMA20'))
-    fig.update_layout(title=f"{symbol} Line Chart", xaxis_title="Date", yaxis_title="Price")
+    fig.add_trace(go.Scatter(x=df["date"], y=df["close"], name="Close"))
+
+    for col in df.columns:
+        if col.startswith("SMA") or col.startswith("EMA"):
+            fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=col))
+
+    fig.update_layout(title=f"{symbol} Price Trend")
     st.plotly_chart(fig, use_container_width=True)
 
-def fetch_news(symbol, page_size=5):
-    url = f"https://newsapi.org/v2/everything?q={symbol}&sortBy=publishedAt&pageSize={page_size}&apiKey={NEWSAPI_KEY}"
-    try:
-        response = requests.get(url)
-        data = response.json()
-        articles = data.get("articles", [])
-        news_list = []
-        for art in articles:
-            title = art.get("title")
-            desc = art.get("description")
-            url = art.get("url")
-            date = art.get("publishedAt")
-            sentiment = TextBlob((title or "") + " " + (desc or "")).sentiment.polarity
-            news_list.append({"title": title, "description": desc, "url": url, "date": date, "sentiment": sentiment})
-        return news_list
-    except Exception as e:
-        st.error(f"Error fetching news: {e}")
-        return []
-        client = OpenAI(api_key=OPENAI_API_KEY)
+# ----------------------------
+# News + Sentiment Analysis
+# ----------------------------
+def fetch_news(symbol, limit=5):
+    url = (
+        f"https://newsapi.org/v2/everything?"
+        f"q={symbol}&sortBy=publishedAt&pageSize={limit}&apiKey={NEWSAPI_KEY}"
+    )
 
+    response = requests.get(url)
+    articles = response.json().get("articles", [])
+    results = []
+
+    for a in articles:
+        text = f"{a.get('title','')} {a.get('description','')}"
+        tb_score = TextBlob(text).sentiment.polarity
+        vader_score = vader.polarity_scores(text)["compound"]
+
+        results.append({
+            "title": a.get("title"),
+            "description": a.get("description"),
+            "url": a.get("url"),
+            "date": a.get("publishedAt"),
+            "textblob": tb_score,
+            "vader": vader_score
+        })
+
+    return results
+
+# ----------------------------
+# AI Q&A
+# ----------------------------
 def ai_answer(question, symbol):
-    # 🚫 No OpenAI key → skip AI entirely
-    if client is None:
+    if not client:
         return finance_fallback_answer(question, symbol)
 
     try:
@@ -142,87 +151,86 @@ def ai_answer(question, symbol):
                 {
                     "role": "system",
                     "content": (
-                        "You are a professional financial analyst. "
-                        "Do not predict exact prices. "
-                        "Provide educational and analytical answers."
+                        "You are a financial analyst. "
+                        "Do not predict prices. "
+                        "Explain concepts and risks clearly."
                     )
                 },
                 {"role": "user", "content": question}
             ],
-            max_tokens=300,
-            temperature=0.4
+            temperature=0.4,
+            max_tokens=300
         )
         return response.choices[0].message.content
 
     except Exception:
         return finance_fallback_answer(question, symbol)
 
-def download_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
+# ----------------------------
+# CSV Export
+# ----------------------------
+def to_csv(df):
+    return df.to_csv(index=False).encode("utf-8")
+
 # ----------------------------
 # Streamlit App
 # ----------------------------
-
 st.set_page_config(page_title="Professional Stock Dashboard", layout="wide")
 st.title("📈 Professional Stock Dashboard")
 
-# Sidebar Inputs
 st.sidebar.header("Configuration")
-stock_symbol = st.sidebar.text_input("Stock Symbol", value="AAPL").upper()
-comparison_symbol = st.sidebar.text_input("Compare With (Optional)").upper()
-period = st.sidebar.selectbox("Data Period", ["1mo","3mo","6mo","1y","2y","5y"], index=2)
-interval = st.sidebar.selectbox("Interval", ["1d","1wk","1mo"], index=0)
-sma_period = st.sidebar.number_input("SMA Period", min_value=2, max_value=200, value=20)
-ema_period = st.sidebar.number_input("EMA Period", min_value=2, max_value=200, value=20)
+symbol = st.sidebar.text_input("Stock Symbol", "AAPL").upper()
+compare = st.sidebar.text_input("Compare With (Optional)").upper()
+period = st.sidebar.selectbox("Period", ["1mo","3mo","6mo","1y","2y","5y"], index=2)
+interval = st.sidebar.selectbox("Interval", ["1d","1wk","1mo"])
+sma_p = st.sidebar.number_input("SMA Period", 2, 200, 20)
+ema_p = st.sidebar.number_input("EMA Period", 2, 200, 20)
 
-# Main Stock Data
-st.subheader(f"{stock_symbol} Stock Data")
-df = get_stock_data(stock_symbol, period, interval)
+st.subheader(f"{symbol} Historical Data")
+df = get_stock_data(symbol, period, interval)
+
 if not df.empty:
-    df = calculate_sma(df, sma_period)
-    df = calculate_ema(df, ema_period)
-    plot_candlestick(df, stock_symbol)
-    plot_line(df, stock_symbol)
+    df = calculate_sma(df, sma_p)
+    df = calculate_ema(df, ema_p)
+    plot_candlestick(df, symbol)
+    plot_line(df, symbol)
     st.dataframe(df.tail(10))
-    csv_data = download_csv(df)
-    st.download_button("Download CSV", csv_data, file_name=f"{stock_symbol}_data.csv", mime="text/csv")
+    st.download_button("Download CSV", to_csv(df), f"{symbol}.csv")
 
-# Comparison Stock
-if comparison_symbol:
-    st.subheader(f"Comparison: {comparison_symbol}")
-    df2 = get_stock_data(comparison_symbol, period, interval)
+if compare:
+    st.subheader(f"Comparison: {compare}")
+    df2 = get_stock_data(compare, period, interval)
     if not df2.empty:
-        df2 = calculate_sma(df2, sma_period)
-        df2 = calculate_ema(df2, ema_period)
-        plot_line(df2, comparison_symbol)
-        st.dataframe(df2.tail(10))
-        csv_data2 = download_csv(df2)
-        st.download_button("Download CSV", csv_data2, file_name=f"{comparison_symbol}_data.csv", mime="text/csv")
+        df2 = calculate_sma(df2, sma_p)
+        df2 = calculate_ema(df2, ema_p)
+        plot_line(df2, compare)
 
-# News & Sentiment
-st.subheader("Latest News & Sentiment")
-news = fetch_news(stock_symbol)
-if news:
-    for n in news:
-        st.markdown(f"**{n['title']}** ({n['date']})")
-        st.markdown(f"{n['description']}")
-        st.markdown(f"Sentiment Score: {n['sentiment']:.2f}")
-        st.markdown(f"[Read More]({n['url']})")
-        st.markdown("---")
+st.subheader("News & Sentiment Analysis")
+news = fetch_news(symbol)
 
-# AI Q&A
+for n in news:
+    st.markdown(f"**{n['title']}** ({n['date']})")
+    st.write(n["description"])
+    st.write(f"TextBlob Sentiment: {n['textblob']:.2f}")
+    st.write(f"VADER Sentiment: {n['vader']:.2f}")
+    st.markdown(f"[Read more]({n['url']})")
+    st.markdown("---")
+
+st.caption(
+    "Multiple NLP models (TextBlob + VADER) are used to compare sentiment outputs "
+    "and validate AI-generated interpretations."
+)
+
 st.subheader("Ask AI about the Stock")
-question = st.text_area("Enter your question here:")
+q = st.text_area("Enter your question")
 if st.button("Get Answer"):
-    if question.strip() != "":
-        answer = ai_answer(question, stock_symbol)
-        st.markdown(f"**Answer:** {answer}")
+    if q.strip():
+        st.write(ai_answer(q, symbol))
     else:
         st.warning("Please enter a question.")
 
-# Footer
 st.markdown("---")
-st.markdown("Developed by a Sophomore | Professional Stock Dashboard | Powered by Streamlit, yfinance, OpenAI, NewsAPI, Plotly")
-
-
-
+st.markdown(
+    "Developed by a Sophomore | AI-Driven Stock Analysis Dashboard | "
+    "Streamlit · yFinance · OpenAI · VADER · TextBlob"
+)
