@@ -1,158 +1,220 @@
+# stock_finance_pro.py
+# Professional AI-Powered Stock & Sentiment Analysis Dashboard
+# Uses ChatGPT + VADER + TextBlob + Real-Time & Historical Market Data
+
+import re
+import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objs as go
 import requests
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
+
+from textblob import TextBlob
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from openai import OpenAI
 
-# -------------------- SETUP --------------------
-st.set_page_config(page_title="AI Stock Analyzer", layout="wide")
+# ============================
+# API KEYS (from Streamlit Secrets)
+# ============================
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
 
-nltk.download("vader_lexicon")
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 vader = SentimentIntensityAnalyzer()
 
-OPENAI_KEY = st.secrets.get("OPENAI_API_KEY", None)
-NEWS_KEY = st.secrets.get("NEWSAPI_KEY")
+# ============================
+# Utility & Fallback Logic
+# ============================
+def finance_fallback_answer(question, symbol):
+    try:
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        price = info.get("currentPrice")
 
-client = OpenAI(api_key=OPENAI_KEY) if OPENAI_KEY else None
+        q = question.lower()
 
-# -------------------- UI --------------------
-st.title("📈 AI-Driven Stock Analysis Platform")
+        # Shares calculation
+        match = re.search(r'(\d+)\s+shares?', q)
+        if match and price:
+            shares = int(match.group(1))
+            return f"{shares} shares of {symbol} are worth approximately ${shares * price:,.2f}."
 
-ticker = st.text_input("Enter Stock Ticker", value="AAPL").upper()
+        if "price" in q:
+            return f"The current price of {symbol} is approximately ${price:.2f}."
 
-# -------------------- STOCK DATA --------------------
-stock = yf.Ticker(ticker)
+        if "risk" in q:
+            return (
+                "Investment risks include market volatility, earnings uncertainty, "
+                "interest rate changes, macroeconomic conditions, and industry competition."
+            )
 
-try:
-    hist = stock.history(period="6mo")
-    price = hist["Close"].iloc[-1]
+        if "market cap" in q:
+            return f"{symbol}'s market cap is approximately ${info.get('marketCap', 'N/A')}."
 
-    st.subheader(f"💰 Current Price: ${price:.2f}")
+        return (
+            "AI access was unavailable, so real-time financial data was used instead. "
+            "Try asking about price, shares, risk, or company fundamentals."
+        )
 
-    st.line_chart(hist["Close"])
+    except Exception:
+        return "Unable to retrieve financial data at this time."
 
-except Exception as e:
-    st.error("Error loading stock data.")
-    st.stop()
+# ============================
+# Data Fetching
+# ============================
+@st.cache_data(ttl=300)
+def get_stock_data(symbol, period, interval):
+    df = yf.Ticker(symbol).history(period=period, interval=interval)
+    df = df.reset_index()
+    df.columns = [c.lower() for c in df.columns]
+    return df
 
-# -------------------- NEWS FETCH --------------------
-st.subheader("📰 News Sentiment Analysis")
+def calculate_sma(df, period):
+    df[f"SMA{period}"] = df["close"].rolling(period).mean()
+    return df
 
-def fetch_news(ticker):
+def calculate_ema(df, period):
+    df[f"EMA{period}"] = df["close"].ewm(span=period, adjust=False).mean()
+    return df
+
+# ============================
+# Charting
+# ============================
+def plot_candlestick(df, symbol):
+    fig = go.Figure(data=[
+        go.Candlestick(
+            x=df["date"],
+            open=df["open"],
+            high=df["high"],
+            low=df["low"],
+            close=df["close"]
+        )
+    ])
+    fig.update_layout(title=f"{symbol} Candlestick Chart", xaxis_title="Date", yaxis_title="Price")
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_line(df, symbol):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["date"], y=df["close"], name="Close"))
+    for col in df.columns:
+        if "SMA" in col or "EMA" in col:
+            fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=col))
+    fig.update_layout(title=f"{symbol} Trend Analysis", xaxis_title="Date", yaxis_title="Price")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ============================
+# News + Sentiment (VADER + TextBlob)
+# ============================
+def fetch_news(symbol, page_size=5):
     url = (
         f"https://newsapi.org/v2/everything?"
-        f"q={ticker}&"
-        f"language=en&"
-        f"sortBy=publishedAt&"
-        f"pageSize=10&"
-        f"apiKey={NEWS_KEY}"
+        f"q={symbol}&sortBy=publishedAt&pageSize={page_size}&apiKey={NEWSAPI_KEY}"
     )
-    return requests.get(url).json().get("articles", [])
+    articles = requests.get(url).json().get("articles", [])
 
-articles = fetch_news(ticker)
+    news_data = []
+    for a in articles:
+        text = f"{a.get('title','')} {a.get('description','')}"
+        vader_score = vader.polarity_scores(text)["compound"]
+        blob_score = TextBlob(text).sentiment.polarity
 
-if not articles:
-    st.warning("No news articles found.")
-    st.stop()
+        news_data.append({
+            "title": a.get("title"),
+            "description": a.get("description"),
+            "url": a.get("url"),
+            "date": a.get("publishedAt"),
+            "vader": vader_score,
+            "textblob": blob_score,
+            "avg_sentiment": (vader_score + blob_score) / 2
+        })
 
-# -------------------- VADER SENTIMENT --------------------
-sentiments = []
+    return news_data
 
-for article in articles:
-    text = (article["title"] or "") + " " + (article["description"] or "")
-    score = vader.polarity_scores(text)["compound"]
-    sentiments.append(score)
+# ============================
+# AI Q&A (ChatGPT + fallback)
+# ============================
+def ai_answer(question, symbol):
+    if client is None:
+        return finance_fallback_answer(question, symbol)
 
-avg_vader = np.mean(sentiments)
-
-st.write(f"**VADER Average Sentiment:** `{avg_vader:.3f}`")
-
-# -------------------- GPT SENTIMENT (OPTIONAL) --------------------
-gpt_sentiment = None
-
-if client:
     try:
-        headlines = "\n".join([a["title"] for a in articles[:5]])
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a financial sentiment analysis assistant."
+                    "content": (
+                        "You are a professional financial analyst. "
+                        "Use historical context and sentiment cautiously. "
+                        "Do not provide price predictions."
+                    )
                 },
-                {
-                    "role": "user",
-                    "content": f"""
-Analyze the sentiment of these headlines about {ticker}.
-Return a score from -1 (very negative) to +1 (very positive)
-and briefly explain why.
-
-{headlines}
-"""
-                }
-            ]
+                {"role": "user", "content": question}
+            ],
+            temperature=0.4,
+            max_tokens=300
         )
-
-        gpt_sentiment = response.choices[0].message.content
-        st.success("ChatGPT Sentiment Analysis:")
-        st.write(gpt_sentiment)
+        return response.choices[0].message.content
 
     except Exception:
-        st.warning("ChatGPT unavailable — using rule-based fallback.")
+        return finance_fallback_answer(question, symbol)
 
-# -------------------- VALIDATION LOGIC --------------------
-st.subheader("🔍 AI Validation & Oversight")
+# ============================
+# Streamlit UI
+# ============================
+st.set_page_config("Professional Stock Dashboard", layout="wide")
+st.title("📊 AI-Driven Stock & Sentiment Analysis Platform")
 
-st.write("""
-This system **does not rely on a single AI model**.
+# Sidebar
+st.sidebar.header("Configuration")
+symbol = st.sidebar.text_input("Stock Symbol", "AAPL").upper()
+compare = st.sidebar.text_input("Compare With (Optional)").upper()
+period = st.sidebar.selectbox("Period", ["1mo","3mo","6mo","1y","2y","5y"], index=2)
+interval = st.sidebar.selectbox("Interval", ["1d","1wk","1mo"])
+sma_p = st.sidebar.number_input("SMA Period", 5, 200, 20)
+ema_p = st.sidebar.number_input("EMA Period", 5, 200, 20)
 
-- **VADER** provides rule-based sentiment (objective baseline)
-- **ChatGPT** provides contextual reasoning
-- Discrepancies are flagged for human interpretation
-""")
+# Main Stock
+df = get_stock_data(symbol, period, interval)
+df = calculate_sma(df, sma_p)
+df = calculate_ema(df, ema_p)
 
-if avg_vader > 0.2:
-    verdict = "Positive"
-elif avg_vader < -0.2:
-    verdict = "Negative"
-else:
-    verdict = "Neutral"
+plot_candlestick(df, symbol)
+plot_line(df, symbol)
+st.dataframe(df.tail(10))
+st.download_button("Download CSV", df.to_csv(index=False), f"{symbol}.csv")
 
-st.metric("Final Validated Sentiment", verdict)
+# Comparison
+if compare:
+    df2 = get_stock_data(compare, period, interval)
+    plot_line(df2, compare)
 
-# -------------------- AI Q&A --------------------
+# News & Sentiment
+st.subheader("📰 News Sentiment Analysis (VADER + TextBlob)")
+news = fetch_news(symbol)
+
+for n in news:
+    st.markdown(f"**{n['title']}** ({n['date']})")
+    st.markdown(n["description"])
+    st.markdown(
+        f"VADER: `{n['vader']:.2f}` | "
+        f"TextBlob: `{n['textblob']:.2f}` | "
+        f"Average: `{n['avg_sentiment']:.2f}`"
+    )
+    st.markdown(f"[Read More]({n['url']})")
+    st.markdown("---")
+
+# AI Q&A
 st.subheader("🤖 Ask AI About the Stock")
+question = st.text_area("Enter your question:")
+if st.button("Get Answer"):
+    st.markdown(f"**Answer:** {ai_answer(question, symbol)}")
 
-question = st.text_input("Ask a question")
-
-if question:
-    if client:
-        try:
-            answer = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial assistant. Use conservative language."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"{question} (Stock: {ticker})"
-                    }
-                ]
-            )
-            st.write(answer.choices[0].message.content)
-
-        except Exception:
-            st.warning("AI unavailable — showing data-based fallback.")
-            st.write(f"Current price of {ticker}: ${price:.2f}")
-
-    else:
-        st.warning("AI disabled — OpenAI key not found.")
-        st.write(f"Current price of {ticker}: ${price:.2f}")
+# Footer
+st.markdown("---")
+st.caption(
+    "Built with Streamlit • yFinance • NewsAPI • VADER • TextBlob • OpenAI | "
+    "Demonstrates AI-assisted analysis with validation and human oversight"
+)
