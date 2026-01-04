@@ -1,10 +1,9 @@
 streamlit
-pandas
-numpy
-plotly
 yfinance
+pandas
+plotly
 requests
 textblob
-transformers
-torch
+vaderSentiment
 openai
+
