@@ -1,7 +1,6 @@
 # AI-Driven Stock & Sentiment Analysis Dashboard
 # Uses: ChatGPT (OpenAI), VADER, TextBlob, yfinance, Streamlit
 # Designed to demonstrate AI validation, cross-model sentiment analysis, and fallback logic
-
 import re
 import os
 import streamlit as st
@@ -13,18 +12,11 @@ from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from openai import OpenAI
 
-# =========================
-# API KEYS (FROM SECRETS)
-# =========================
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 vader = SentimentIntensityAnalyzer()
-
-# =========================
-# DATA FUNCTIONS
-# =========================
 @st.cache_data(ttl=300)
 def get_stock_data(symbol, period="5y", interval="1d"):
     stock = yf.Ticker(symbol)
@@ -37,10 +29,6 @@ def add_indicators(df, sma=20, ema=20):
     df["SMA"] = df["close"].rolling(sma).mean()
     df["EMA"] = df["close"].ewm(span=ema, adjust=False).mean()
     return df
-
-# =========================
-# PLOTTING
-# =========================
 def plot_stock(df, symbol):
     fig = go.Figure()
 
@@ -64,10 +52,6 @@ def plot_stock(df, symbol):
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-# =========================
-# NEWS + SENTIMENT
-# =========================
 def fetch_news(symbol, limit=5):
     url = (
         f"https://newsapi.org/v2/everything?"
@@ -82,9 +66,6 @@ def analyze_sentiment(text):
     avg = (tb + vd) / 2
     return tb, vd, avg
 
-# =========================
-# AI FALLBACK LOGIC
-# =========================
 def finance_fallback_answer(question, symbol):
     stock = yf.Ticker(symbol)
     info = stock.info
@@ -143,31 +124,21 @@ def ai_answer(question, symbol):
     except Exception:
         return finance_fallback_answer(question, symbol)
 
-# =========================
-# STREAMLIT UI
-# =========================
 st.set_page_config(page_title="AI Stock & Sentiment Analyzer", layout="wide")
-st.title("📈 AI-Driven Stock & Sentiment Analysis")
+st.title(" AI Driven Stock & Sentiment Analysis")
 
 symbol = st.sidebar.text_input("Stock Symbol", "AAPL").upper()
 period = st.sidebar.selectbox("Period", ["1y", "2y", "5y"], index=2)
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk"], index=0)
 sma = st.sidebar.slider("SMA", 5, 100, 20)
 ema = st.sidebar.slider("EMA", 5, 100, 20)
-
-# =========================
-# STOCK DATA
-# =========================
 df = get_stock_data(symbol, period, interval)
 df = add_indicators(df, sma, ema)
 
 plot_stock(df, symbol)
 st.dataframe(df.tail(10))
 
-# =========================
-# NEWS SENTIMENT
-# =========================
-st.subheader("📰 News Sentiment")
+st.subheader("News Sentiment")
 articles = fetch_news(symbol)
 
 for a in articles:
@@ -182,10 +153,7 @@ for a in articles:
     st.markdown(f"[Read More]({a['url']})")
     st.markdown("---")
 
-# =========================
-# AI Q&A
-# =========================
-st.subheader("🤖 Ask AI About the Stock")
+st.subheader(" Ask AI About the Stock")
 question = st.text_input("Question")
 
 if st.button("Ask"):
@@ -194,13 +162,9 @@ if st.button("Ask"):
         st.success(answer)
     else:
         st.warning("Please enter a question.")
-
-# =========================
-# FOOTER
-# =========================
 st.markdown("---")
 st.markdown(
-    "Built by a Sophomore | Uses ChatGPT, VADER, TextBlob | "
+    "Built by a Sophomore | Uses ChatGPT, VADER, TextBlob "
     "Demonstrates AI validation & fallback engineering"
 )
 
